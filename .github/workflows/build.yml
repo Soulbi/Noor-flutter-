@@ -1,0 +1,203 @@
+name: Build Noor (Flutter — Android + iOS)
+
+# How this works: this repo only commits the Flutter *application* code
+# (pubspec.yaml, lib/, assets/) — not the generated android/ and ios/
+# platform folders. Those are regenerated fresh by `flutter create` on
+# every run (step below), then patched to the app's real identifiers
+# (fr.noor.app) and signing config. This avoids hand-maintaining fragile,
+# mostly-boilerplate native scaffolding by hand, and keeps it always in
+# sync with whatever Flutter version this workflow installs.
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+env:
+  APP_ID: fr.noor.app   # MUST stay exactly this — it's the applicationId
+                         # already published on the Play Store (Tests
+                         # internes track). Changing it would make Google
+                         # Play treat this as a brand new, unrelated app.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate the android/ and ios/ platform projects
+        # --org fr.noor + --project-name app => applicationId / bundle id
+        # "fr.noor.app", matching $APP_ID above. Since pubspec.yaml, lib/
+        # and assets/ already exist in the repo, flutter create does NOT
+        # overwrite them — it only fills in the missing platform folders.
+        run: flutter create --platforms=android,ios --org fr.noor --project-name app .
+
+      - name: Fetch Dart/Flutter package dependencies
+        run: flutter pub get
+
+      - name: Run static analysis (non-blocking for now)
+        run: flutter analyze || echo "::warning::flutter analyze reported issues — see above."
+
+      - name: Force the Android applicationId / namespace to fr.noor.app
+        run: |
+          python3 - <<'PYEOF'
+          import re, glob
+          for path in glob.glob('android/app/build.gradle*'):
+              with open(path) as f:
+                  content = f.read()
+              content = re.sub(r'''(applicationId\s*=?\s*)['"][^'"]+['"]''', r'\1"fr.noor.app"', content)
+              content = re.sub(r'''(namespace\s*=?\s*)['"][^'"]+['"]''', r'\1"fr.noor.app"', content)
+              with open(path, 'w') as f:
+                  f.write(content)
+              print(f'Patched {path}')
+          PYEOF
+
+      - name: Add the permissions the app's modules need (location, notifications, internet)
+        # Location: mosque search / prayer-time geolocation. POST_NOTIFICATIONS
+        # + RECEIVE_BOOT_COMPLETED: flutter_local_notifications (Android 13+
+        # notification opt-in, and rescheduling alarms after a reboot).
+        # INTERNET: Quran text/audio (Al Quran Cloud API).
+        run: |
+          python3 - <<'PYEOF'
+          path = 'android/app/src/main/AndroidManifest.xml'
+          with open(path) as f:
+              content = f.read()
+          perms = '''    <uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+              <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+          '''
+          if 'ACCESS_FINE_LOCATION' not in content:
+              content = content.replace('<application', perms + '    <application', 1)
+          with open(path, 'w') as f:
+              f.write(content)
+          print('Patched AndroidManifest.xml permissions')
+          PYEOF
+
+      - name: Force the iOS bundle identifier to fr.noor.app
+        run: |
+          sed -i 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = fr.noor.app;/g' ios/Runner.xcodeproj/project.pbxproj
+
+      - name: Decode the Android signing key
+        # Same keystore/secrets already used by the previous (Capacitor)
+        # build — reusing it is required, not optional: the Play Store
+        # ties app updates to the signing key, not the build tool.
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/release.keystore
+
+      - name: Wire the signing key into the Android build
+        # Two stable anchors are used instead of a full rewrite, since they
+        # hold across Flutter template versions: the "android {" opening
+        # (to insert the keystore loader + a "release" signingConfig right
+        # after it), and the auto-generated "sign release builds with the
+        # debug key for now" line inside buildTypes.release (swapped to
+        # point at our new "release" signingConfig instead).
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        run: |
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=../release.keystore
+          EOF
+          python3 - <<'PYEOF'
+          import re, glob, sys
+
+          candidates = glob.glob('android/app/build.gradle.kts') or glob.glob('android/app/build.gradle')
+          if not candidates:
+              sys.exit('No android/app/build.gradle(.kts) found')
+          path = candidates[0]
+          kotlin = path.endswith('.kts')
+          with open(path) as f:
+              content = f.read()
+
+          if kotlin:
+              loader = '''
+          val keystoreProperties = java.util.Properties()
+          val keystorePropertiesFile = rootProject.file("key.properties")
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))
+          }
+          '''
+              signing_configs = '''
+              signingConfigs {
+                  create("release") {
+                      keyAlias = keystoreProperties["keyAlias"] as String
+                      keyPassword = keystoreProperties["keyPassword"] as String
+                      storeFile = file(keystoreProperties["storeFile"] as String)
+                      storePassword = keystoreProperties["storePassword"] as String
+                  }
+              }
+          '''
+              content = content.replace('android {', loader + '\nandroid {', 1)
+              content = re.sub(r'(android\s*\{)', r'\1\n' + signing_configs, content, count=1)
+              content = re.sub(
+                  r'signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)',
+                  'signingConfig = signingConfigs.getByName("release")',
+                  content,
+              )
+          else:
+              loader = '''
+          def keystoreProperties = new Properties()
+          def keystorePropertiesFile = rootProject.file('key.properties')
+          if (keystorePropertiesFile.exists()) {
+              keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+          }
+          '''
+              signing_configs = '''
+              signingConfigs {
+                  release {
+                      keyAlias keystoreProperties['keyAlias']
+                      keyPassword keystoreProperties['keyPassword']
+                      storeFile file(keystoreProperties['storeFile'])
+                      storePassword keystoreProperties['storePassword']
+                  }
+              }
+          '''
+              content = loader + '\n' + content
+              content = re.sub(r'(android\s*\{)', r'\1\n' + signing_configs, content, count=1)
+              content = re.sub(
+                  r'signingConfig\s+signingConfigs\.debug',
+                  'signingConfig signingConfigs.release',
+                  content,
+              )
+
+          with open(path, 'w') as f:
+              f.write(content)
+          print(f'Wired release signing into {path}')
+          PYEOF
+
+      - name: Build the signed Android App Bundle (.aab) and .apk
+        run: |
+          flutter build appbundle --release
+          flutter build apk --release
+
+      - name: Build an unsigned iOS app (verifies it compiles — signing comes once an Apple Developer account is configured)
+        run: flutter build ios --release --no-codesign
+
+      - name: Upload the build results to this workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: noor-flutter-build
+          path: |
+            build/app/outputs/bundle/release/*.aab
+            build/app/outputs/flutter-apk/*.apk
+            build/ios/iphoneos/*.app
+          if-no-files-found: error

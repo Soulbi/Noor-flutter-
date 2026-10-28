@@ -1,0 +1,6 @@
+include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    # Kept permissive for now — tightened once the whole app is ported.
+    prefer_const_constructors: false
