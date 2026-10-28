@@ -83,6 +83,11 @@ jobs:
           with open(path) as f:
               content = f.read()
 
+          # Rather than trying to locate (and possibly mis-match) an existing
+          # `dependencies { ... }` block — the exact template shape has
+          # already changed between Flutter versions — just append a fresh
+          # one at the end of the file. Gradle (both DSLs) is happy to see
+          # `dependencies { ... }` invoked more than once in the same script.
           if kotlin:
               if 'isCoreLibraryDesugaringEnabled' not in content:
                   content = re.sub(
@@ -91,11 +96,7 @@ jobs:
                       content, count=1,
                   )
               if 'coreLibraryDesugaring(' not in content:
-                  content = re.sub(
-                      r'(dependencies\s*\{)',
-                      r'\1\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")',
-                      content, count=1,
-                  )
+                  content += '\n\ndependencies {\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")\n}\n'
           else:
               if 'coreLibraryDesugaringEnabled' not in content:
                   content = re.sub(
@@ -104,11 +105,7 @@ jobs:
                       content, count=1,
                   )
               if "coreLibraryDesugaring '" not in content:
-                  content = re.sub(
-                      r'(dependencies\s*\{)',
-                      r"\1\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'",
-                      content, count=1,
-                  )
+                  content += "\n\ndependencies {\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'\n}\n"
 
           with open(path, 'w') as f:
               f.write(content)
