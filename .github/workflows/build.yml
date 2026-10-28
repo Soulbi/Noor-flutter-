@@ -7,6 +7,14 @@ name: Build Noor (Flutter — Android + iOS)
 # (fr.noor.app) and signing config. This avoids hand-maintaining fragile,
 # mostly-boilerplate native scaffolding by hand, and keeps it always in
 # sync with whatever Flutter version this workflow installs.
+#
+# Android and iOS are two separate, parallel jobs rather than one job
+# doing both: `flutter build ios` only works with Xcode, which only
+# exists on a macOS runner — it cannot run on the same ubuntu-latest
+# runner that builds the Android App Bundle/APK. Splitting them also
+# means an iOS-only failure no longer blocks the Android build (or
+# vice versa), and the (much pricier) macOS runner is only used for
+# the iOS job.
 
 on:
   push:
@@ -23,7 +31,7 @@ env:
                          # Play treat this as a brand new, unrelated app.
 
 jobs:
-  build:
+  build-android:
     runs-on: ubuntu-latest
     env:
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -40,12 +48,12 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Generate the android/ and ios/ platform projects
-        # --org fr.noor + --project-name app => applicationId / bundle id
-        # "fr.noor.app", matching $APP_ID above. Since pubspec.yaml, lib/
-        # and assets/ already exist in the repo, flutter create does NOT
-        # overwrite them — it only fills in the missing platform folders.
-        run: flutter create --platforms=android,ios --org fr.noor --project-name app .
+      - name: Generate the android/ platform project
+        # --org fr.noor + --project-name app => applicationId "fr.noor.app",
+        # matching $APP_ID above. Since pubspec.yaml, lib/ and assets/
+        # already exist in the repo, flutter create does NOT overwrite
+        # them — it only fills in the missing platform folder.
+        run: flutter create --platforms=android --org fr.noor --project-name app .
 
       - name: Fetch Dart/Flutter package dependencies
         run: flutter pub get
@@ -135,10 +143,6 @@ jobs:
               f.write(content)
           print('Patched AndroidManifest.xml permissions')
           PYEOF
-
-      - name: Force the iOS bundle identifier to fr.noor.app
-        run: |
-          sed -i 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = fr.noor.app;/g' ios/Runner.xcodeproj/project.pbxproj
 
       - name: Decode the Android signing key
         # Same keystore/secrets already used by the previous (Capacitor)
@@ -234,15 +238,43 @@ jobs:
           flutter build appbundle --release
           flutter build apk --release
 
-      - name: Build an unsigned iOS app (verifies it compiles — signing comes once an Apple Developer account is configured)
-        run: flutter build ios --release --no-codesign
-
-      - name: Upload the build results to this workflow run
+      - name: Upload the Android build results to this workflow run
         uses: actions/upload-artifact@v4
         with:
-          name: noor-flutter-build
+          name: noor-android-build
           path: |
             build/app/outputs/bundle/release/*.aab
             build/app/outputs/flutter-apk/*.apk
-            build/ios/iphoneos/*.app
+          if-no-files-found: error
+
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Generate the ios/ platform project
+        run: flutter create --platforms=ios --org fr.noor --project-name app .
+
+      - name: Fetch Dart/Flutter package dependencies
+        run: flutter pub get
+
+      - name: Force the iOS bundle identifier to fr.noor.app
+        run: |
+          sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = fr.noor.app;/g' ios/Runner.xcodeproj/project.pbxproj
+
+      - name: Build an unsigned iOS app (verifies it compiles — signing comes once an Apple Developer account is configured)
+        run: flutter build ios --release --no-codesign
+
+      - name: Upload the iOS build result to this workflow run
+        uses: actions/upload-artifact@v4
+        with:
+          name: noor-ios-build
+          path: build/ios/iphoneos/*.app
           if-no-files-found: error
