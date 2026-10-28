@@ -125,7 +125,6 @@ ThemeData buildAppTheme(AppPalette p, Brightness brightness) {
       error: p.danger,
     ),
     textTheme: publicSans.apply(bodyColor: p.ink, displayColor: p.ink),
-    fontFamily: GoogleFonts.publicSans().fontFamily,
     appBarTheme: AppBarTheme(
       backgroundColor: p.bg,
       foregroundColor: p.ink,
