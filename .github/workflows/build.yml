@@ -67,6 +67,54 @@ jobs:
               print(f'Patched {path}')
           PYEOF
 
+      - name: Enable core library desugaring (required by flutter_local_notifications)
+        # flutter_local_notifications' Android backend needs Java 8+ desugared
+        # APIs (java.time etc.) on API levels below 26. Without this, Gradle's
+        # checkReleaseAarMetadata task fails the build outright.
+        run: |
+          python3 - <<'PYEOF'
+          import re, glob, sys
+
+          candidates = glob.glob('android/app/build.gradle.kts') or glob.glob('android/app/build.gradle')
+          if not candidates:
+              sys.exit('No android/app/build.gradle(.kts) found')
+          path = candidates[0]
+          kotlin = path.endswith('.kts')
+          with open(path) as f:
+              content = f.read()
+
+          if kotlin:
+              if 'isCoreLibraryDesugaringEnabled' not in content:
+                  content = re.sub(
+                      r'(compileOptions\s*\{)',
+                      r'\1\n        isCoreLibraryDesugaringEnabled = true',
+                      content, count=1,
+                  )
+              if 'coreLibraryDesugaring(' not in content:
+                  content = re.sub(
+                      r'(dependencies\s*\{)',
+                      r'\1\n    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")',
+                      content, count=1,
+                  )
+          else:
+              if 'coreLibraryDesugaringEnabled' not in content:
+                  content = re.sub(
+                      r'(compileOptions\s*\{)',
+                      r"\1\n        coreLibraryDesugaringEnabled true",
+                      content, count=1,
+                  )
+              if "coreLibraryDesugaring '" not in content:
+                  content = re.sub(
+                      r'(dependencies\s*\{)',
+                      r"\1\n    coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'",
+                      content, count=1,
+                  )
+
+          with open(path, 'w') as f:
+              f.write(content)
+          print(f'Enabled core library desugaring in {path}')
+          PYEOF
+
       - name: Add the permissions the app's modules need (location, notifications, internet)
         # Location: mosque search / prayer-time geolocation. POST_NOTIFICATIONS
         # + RECEIVE_BOOT_COMPLETED: flutter_local_notifications (Android 13+
