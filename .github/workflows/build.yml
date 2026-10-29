@@ -278,6 +278,32 @@ jobs:
         run: |
           sed -i '' 's/PRODUCT_BUNDLE_IDENTIFIER = [^;]*;/PRODUCT_BUNDLE_IDENTIFIER = fr.noor.app;/g' ios/Runner.xcodeproj/project.pbxproj
 
+      - name: Add the iOS location permission description (required by geolocator)
+        # iOS refuses to even show the location permission prompt without a
+        # usage description string in Info.plist — without this, requesting
+        # the user's position (Prières screen) would silently fail/crash.
+        # ios/ is regenerated fresh every run (see top of file), so this has
+        # to be patched back in each time, same as the Android manifest.
+        run: |
+          python3 - <<'PYEOF2'
+          import re
+          path = 'ios/Runner/Info.plist'
+          with open(path) as f:
+              content = f.read()
+          if 'NSLocationWhenInUseUsageDescription' not in content:
+              addition = (
+                  '\t<key>NSLocationWhenInUseUsageDescription</key>\n'
+                  '\t<string>Noor utilise ta position pour calculer les horaires de '
+                  'pri\u00e8re et trouver les mosqu\u00e9es proches de toi.</string>\n'
+              )
+              content = re.sub(r'(</dict>\s*</plist>\s*)$', addition + r'\1', content)
+              with open(path, 'w') as f:
+                  f.write(content)
+              print('Patched Info.plist with NSLocationWhenInUseUsageDescription')
+          else:
+              print('Info.plist already has NSLocationWhenInUseUsageDescription')
+          PYEOF2
+
       - name: Build an unsigned iOS app (verifies it compiles — signing comes once an Apple Developer account is configured)
         run: flutter build ios --release --no-codesign
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/i18n.dart';
 import 'placeholder_screen.dart';
 import 'parametres_screen.dart';
+import 'prieres_screen.dart';
 
 /// The 5-tab bottom navigation shell, matching the web app's nav-btn row
 /// (Accueil, Jeûne, Prières, Coran, Réglages). Each tab's real content is
@@ -23,7 +24,7 @@ class _HomeShellState extends State<HomeShell> {
     final screens = [
       PlaceholderScreen(titleKey: 'navAccueil'),
       PlaceholderScreen(titleKey: 'navJeune'),
-      PlaceholderScreen(titleKey: 'navPrieres'),
+      const PrieresScreen(),
       PlaceholderScreen(titleKey: 'navCoran'),
       const ParametresScreen(),
     ];
