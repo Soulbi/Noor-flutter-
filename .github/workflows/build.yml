@@ -243,9 +243,18 @@ jobs:
           PYEOF
 
       - name: Build the signed Android App Bundle (.aab) and .apk
+        # versionCode must strictly increase on every Play Store upload, and
+        # pubspec.yaml's build number (currently +1) collides with codes
+        # already used by earlier (pre-Flutter-rewrite) uploads. Deriving it
+        # from the ever-increasing GitHub Actions run number instead means
+        # every future build gets a fresh, unique code automatically — no
+        # more manual bumping. +100 offset gives headroom above the highest
+        # code already used in Play Console (13 as of this change).
         run: |
-          flutter build appbundle --release
-          flutter build apk --release
+          BUILD_NUMBER=$(( ${{ github.run_number }} + 100 ))
+          echo "Using versionCode $BUILD_NUMBER"
+          flutter build appbundle --release --build-number=$BUILD_NUMBER
+          flutter build apk --release --build-number=$BUILD_NUMBER
 
       - name: Upload the Android build results to this workflow run
         uses: actions/upload-artifact@v4
