@@ -335,6 +335,14 @@ jobs:
           cd artifacts/ios
           zip -r ../ios-app.zip .
 
+      - name: Flatten the Android outputs (download-artifact keeps the original nested build/ path)
+        run: |
+          mkdir -p release-assets
+          find artifacts/android -name '*.aab' -exec cp {} release-assets/ \;
+          find artifacts/android -name '*.apk' -exec cp {} release-assets/ \;
+          cp artifacts/ios-app.zip release-assets/
+          ls -la release-assets/
+
       - name: Create a GitHub Release with the build outputs attached
         # This is what makes a downloadable Release show up on the repo's
         # Releases page, separate from (and longer-lived than) the
@@ -345,7 +353,4 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: "Build #${{ github.run_number }}"
           body: "Build automatique depuis le commit ${{ github.sha }}."
-          files: |
-            artifacts/android/*.aab
-            artifacts/android/*.apk
-            artifacts/ios-app.zip
+          files: release-assets/*
