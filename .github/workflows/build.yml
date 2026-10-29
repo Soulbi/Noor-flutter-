@@ -61,6 +61,19 @@ jobs:
       - name: Run static analysis (non-blocking for now)
         run: flutter analyze || echo "::warning::flutter analyze reported issues — see above."
 
+      - name: Set the Android app label to "Noor" (defaults to "app" from --project-name)
+        run: |
+          python3 - <<'PYEOF2'
+          import re
+          path = 'android/app/src/main/AndroidManifest.xml'
+          with open(path) as f:
+              content = f.read()
+          content = re.sub(r'android:label="[^"]*"', 'android:label="Noor"', content)
+          with open(path, 'w') as f:
+              f.write(content)
+          print('Patched AndroidManifest.xml label')
+          PYEOF2
+
       - name: Force the Android applicationId / namespace to fr.noor.app
         run: |
           python3 - <<'PYEOF'
