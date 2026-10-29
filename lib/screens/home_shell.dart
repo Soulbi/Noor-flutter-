@@ -18,6 +18,16 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
+  // Which tabs have been visited at least once. IndexedStack normally builds
+  // *every* child immediately so switching tabs is instant and state is
+  // preserved — but that also means a tab's initState() (GPS permission
+  // request, prayer-time math, mosque search…) would fire the moment the
+  // app opens, even for a tab the user never looked at. Building only the
+  // visited tabs — while still keeping them in the IndexedStack once built,
+  // so switching back preserves their state — keeps the home screen safe
+  // to open even if another tab's first-run logic has a problem.
+  final Set<int> _visited = {0};
+
   @override
   Widget build(BuildContext context) {
     final t = AppLocaleScope.of(context).t;
@@ -28,12 +38,18 @@ class _HomeShellState extends State<HomeShell> {
       PlaceholderScreen(titleKey: 'navCoran'),
       const ParametresScreen(),
     ];
+    final lazyScreens = [
+      for (var i = 0; i < screens.length; i++) _visited.contains(i) ? screens[i] : const SizedBox.shrink(),
+    ];
 
     return Scaffold(
-      body: SafeArea(child: IndexedStack(index: _index, children: screens)),
+      body: SafeArea(child: IndexedStack(index: _index, children: lazyScreens)),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _index,
-        onTap: (i) => setState(() => _index = i),
+        onTap: (i) => setState(() {
+          _index = i;
+          _visited.add(i);
+        }),
         selectedFontSize: 11.5,
         unselectedFontSize: 11.5,
         items: [
