@@ -58,6 +58,9 @@ jobs:
       - name: Fetch Dart/Flutter package dependencies
         run: flutter pub get
 
+      - name: Generate the real app launcher icon (flutter create resets it to the default Flutter icon every run)
+        run: dart run flutter_launcher_icons
+
       - name: Run static analysis (non-blocking for now)
         run: flutter analyze || echo "::warning::flutter analyze reported issues — see above."
 
@@ -133,11 +136,13 @@ jobs:
           print(f'Enabled core library desugaring in {path}')
           PYEOF
 
-      - name: Add the permissions the app's modules need (location, notifications, internet)
-        # Location: mosque search / prayer-time geolocation. POST_NOTIFICATIONS
-        # + RECEIVE_BOOT_COMPLETED: flutter_local_notifications (Android 13+
-        # notification opt-in, and rescheduling alarms after a reboot).
-        # INTERNET: Quran text/audio (Al Quran Cloud API).
+      - name: Add the permissions the app's modules need (location, internet)
+        # Location: mosque search / prayer-time geolocation. INTERNET: kept
+        # for future Quran text/audio (Al Quran Cloud API), harmless now.
+        # The notification-related permissions (POST_NOTIFICATIONS,
+        # RECEIVE_BOOT_COMPLETED, SCHEDULE_EXACT_ALARM) were removed along
+        # with flutter_local_notifications — see pubspec.yaml — add them
+        # back together with that plugin once adhan reminders are built.
         run: |
           python3 - <<'PYEOF'
           path = 'android/app/src/main/AndroidManifest.xml'
@@ -146,9 +151,6 @@ jobs:
           perms = '''    <uses-permission android:name="android.permission.INTERNET"/>
               <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
               <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
-              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-              <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
           '''
           if 'ACCESS_FINE_LOCATION' not in content:
               content = content.replace('<application', perms + '    <application', 1)
@@ -295,6 +297,9 @@ jobs:
 
       - name: Fetch Dart/Flutter package dependencies
         run: flutter pub get
+
+      - name: Generate the real app launcher icon (flutter create resets it to the default Flutter icon every run)
+        run: dart run flutter_launcher_icons
 
       - name: Force the iOS bundle identifier to fr.noor.app
         run: |

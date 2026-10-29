@@ -18,29 +18,32 @@ dependencies:
   # Device location, for prayer-time calculation and mosque search.
   geolocator: ^13.0.2
 
-  # Native notifications, scheduled days ahead so they survive the app
-  # being closed — same role @capacitor/local-notifications played in the
-  # Android build this replaces.
-  flutter_local_notifications: ^18.0.1
-  timezone: ^0.9.4
-
-  # Adhan audio playback at prayer time.
-  audioplayers: ^6.1.0
-
-  # Android home screen widget (today's prayer times without opening the app).
-  home_widget: ^0.7.0
-
-  # Quran Arabic/French/English text + recitation audio (Al Quran Cloud API),
-  # same source the web app already uses.
-  http: ^1.2.2
-
   # Fonts matching the current app (Fraunces, Public Sans, Noto Naskh Arabic).
   google_fonts: ^6.2.1
+
+  # --- Planned, not yet wired into any screen — removed for now. ---
+  # Each of these pulls in its own native Android registration code
+  # (WorkManager + Glance widgets for notifications, AppWidgetProvider for
+  # the home-screen widget, native media players for audio) for zero
+  # current benefit, which is unnecessary risk while diagnosing a
+  # crash-on-launch report. Add each back individually, one at a time, once
+  # it is actually implemented and can be tested in isolation:
+  #   flutter_local_notifications: ^18.0.1   # adhan reminders
+  #   timezone: ^0.9.4                        # used alongside the above
+  #   audioplayers: ^6.1.0                    # adhan audio playback
+  #   home_widget: ^0.7.0                     # home-screen widget
+  #   http: ^1.2.2                            # Quran text/audio (Al Quran Cloud API)
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.3
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/icon.png"
 
 flutter:
   uses-material-design: true
