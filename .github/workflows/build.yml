@@ -178,11 +178,20 @@ jobs:
               content = f.read()
 
           if kotlin:
+              # `java.util.Properties()` / `java.io.FileInputStream(...)` look
+              # safe, but Gradle's Kotlin DSL script accessors shadow the
+              # top-level `java` identifier for Android app modules (it
+              # becomes a `JavaPluginExtension` accessor instead of the java.*
+              # package), which breaks the dotted reference with "Unresolved
+              # reference 'util'"/"'io'". Importing the classes explicitly and
+              # using their bare names sidesteps that shadowing entirely.
+              if 'import java.util.Properties' not in content:
+                  content = 'import java.util.Properties\nimport java.io.FileInputStream\n' + content
               loader = '''
-          val keystoreProperties = java.util.Properties()
+          val keystoreProperties = Properties()
           val keystorePropertiesFile = rootProject.file("key.properties")
           if (keystorePropertiesFile.exists()) {
-              keystoreProperties.load(java.io.FileInputStream(keystorePropertiesFile))
+              keystoreProperties.load(FileInputStream(keystorePropertiesFile))
           }
           '''
               signing_configs = '''
